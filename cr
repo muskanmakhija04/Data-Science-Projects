@@ -72,3 +72,30 @@ future_df = pd.DataFrame({
 future_X = future_df[features]
 future_pred = models[-1].predict(future_X)
 print(future_pred)
+
+
+
+ #graph
+ import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Assuming you have already split the data and trained the model
+
+# Make predictions on the test set (use your actual test data)
+y_pred = models[-1].predict(X_test)
+
+# Create a DataFrame to compare actual vs predicted
+results_df = pd.DataFrame({
+    'Actual': y_test,
+    'Predicted': y_pred
+})
+
+# Plot using seaborn or matplotlib
+plt.figure(figsize=(10, 6))
+sns.lineplot(data=results_df, palette="tab10", linewidth=2.5)
+plt.title('Predicted vs Actual Consolidated Revenue')
+plt.xlabel('Index')
+plt.ylabel('Consolidated Revenue')
+plt.legend(['Actual', 'Predicted'])
+plt.show()
+                                                                       
