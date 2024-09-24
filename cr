@@ -90,12 +90,13 @@ results_df = pd.DataFrame({
     'Predicted': y_pred
 })
 
-# Plot using seaborn or matplotlib
+# Plot using matplotlib
 plt.figure(figsize=(10, 6))
-sns.lineplot(data=results_df, palette="tab10", linewidth=2.5)
+plt.plot(results_df['Actual'].reset_index(drop=True), label='Actual', color='blue', marker='o', linestyle='-')
+plt.plot(results_df['Predicted'].reset_index(drop=True), label='Predicted', color='orange', marker='x', linestyle='--')
 plt.title('Predicted vs Actual Consolidated Revenue')
 plt.xlabel('Index')
 plt.ylabel('Consolidated Revenue')
-plt.legend(['Actual', 'Predicted'])
-plt.show()
-                                                                       
+plt.legend()
+plt.grid()
+plt.show()                                                       
