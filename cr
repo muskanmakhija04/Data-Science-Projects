@@ -1,83 +1,74 @@
 import pandas as pd
 import lightgbm as lgb
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.preprocessing import LabelEncoder
-from sklearn.metrics import mean_absolute_error
 
-# Assuming your dataframe is named df
-# df has columns: 'date', 'customer_group', 'ledger', 'vertical', 'consolidated_revenue'
-df['date'] = pd.to_datetime(df['date'])
+# Load your dataset (replace with actual file path or dataframe)
+# Assume df contains 'Month', 'customer_group', 'ledger', 'vertical', 'consolidated_revenue'
+df = pd.read_csv('consolidated_revenue_data.csv')
 
-# Feature engineering
-# Group data by month, customer group, ledger, and vertical
-df['month'] = df['date'].dt.to_period('M')
-grouped_df = df.groupby(['month', 'customer_group', 'ledger', 'vertical']).agg({
-    'consolidated_revenue': 'sum'
-}).reset_index()
+# Ensure 'Month' column is datetime
+df['Month'] = pd.to_datetime(df['Month'])
 
-# Label Encoding for categorical features
-label_encoders = {}
-for col in ['customer_group', 'ledger', 'vertical']:
-    le = LabelEncoder()
-    grouped_df[col] = le.fit_transform(grouped_df[col])
-    label_encoders[col] = le
+# Sort by time to ensure temporal order
+df = df.sort_values('Month')
 
-# Create lag features for past 12 months to capture full 1-year trend
-for lag in range(1, 13):
-    grouped_df[f'revenue_lag_{lag}'] = grouped_df.groupby(['customer_group', 'ledger', 'vertical'])['consolidated_revenue'].shift(lag)
+# Step 1: Target encoding for categorical features (Customer Group, Ledger, Vertical)
+cat_features = ['customer_group', 'ledger', 'vertical']
+for col in cat_features:
+    # Compute mean target (consolidated revenue) for each category
+    target_mean = df.groupby(col)['consolidated_revenue'].mean()
+    df[col + '_encoded'] = df[col].map(target_mean)
 
-# Drop NA values caused by lagging
-grouped_df.dropna(inplace=True)
+# Step 2: Feature engineering - extract time-based features
+df['month'] = df['Month'].dt.month
+df['quarter'] = df['Month'].dt.quarter
+df['year'] = df['Month'].dt.year
 
-# Split into train and test sets (train on data before 2024)
-train_df = grouped_df[grouped_df['month'] < '2024-01']
-test_df = grouped_df[grouped_df['month'] >= '2024-01']
+# Step 3: Prepare data for LightGBM model
+# Define features and target
+features = ['month', 'quarter', 'year'] + [col + '_encoded' for col in cat_features]
+X = df[features]
+y = df['consolidated_revenue']
 
-X_train = train_df.drop(['consolidated_revenue', 'month'], axis=1)
-y_train = train_df['consolidated_revenue']
-X_test = test_df.drop(['consolidated_revenue', 'month'], axis=1)
-y_test = test_df['consolidated_revenue']
+# Step 4: Train-test split using time-based cross-validation (TimeSeriesSplit)
+tscv = TimeSeriesSplit(n_splits=3)
 
-# Train LightGBM model
-lgb_train = lgb.Dataset(X_train, y_train, categorical_feature=['customer_group', 'ledger', 'vertical'])
-lgb_test = lgb.Dataset(X_test, y_test, reference=lgb_train, categorical_feature=['customer_group', 'ledger', 'vertical'])
-
+# Step 5: Train LightGBM model
 params = {
     'objective': 'regression',
-    'metric': 'mae',
-    'boosting_type': 'gbdt',
-    'learning_rate': 0.05,
+    'metric': 'rmse',
+    'learning_rate': 0.1,
     'num_leaves': 31,
-    'verbose': -1
+    'min_data_in_leaf': 20
 }
 
-model = lgb.train(params, lgb_train, valid_sets=[lgb_train, lgb_test], early_stopping_rounds=10)
+models = []
+for train_index, test_index in tscv.split(X):
+    X_train, X_test = X.iloc[train_index], X.iloc[test_index]
+    y_train, y_test = y.iloc[train_index], y.iloc[test_index]
+    
+    # Convert data to LightGBM dataset format
+    train_data = lgb.Dataset(X_train, label=y_train)
+    valid_data = lgb.Dataset(X_test, label=y_test, reference=train_data)
+    
+    # Train model
+    model = lgb.train(params, train_data, valid_sets=[train_data, valid_data], early_stopping_rounds=50)
+    models.append(model)
 
-# Predict for the next quarter
-y_pred = model.predict(X_test)
+# Step 6: Prediction (Example for future month prediction)
+future_months = pd.date_range(start='2024-03-01', periods=3, freq='MS')
+future_df = pd.DataFrame({
+    'Month': future_months,
+    'customer_group_encoded': 0,  # Replace with actual target-encoded values
+    'ledger_encoded': 0,
+    'vertical_encoded': 0,
+    'month': future_months.month,
+    'quarter': future_months.quarter,
+    'year': future_months.year
+})
 
-# Evaluate the model
-mae = mean_absolute_error(y_test, y_pred)
-print(f'Mean Absolute Error: {mae}')
-
-# Forecast next quarter (3 months) step by step
-last_known = grouped_df[grouped_df['month'] == '2023-12'].copy()
-
-for i in range(1, 4):  # 3 months forecast
-    # Prepare next month’s input
-    next_month = last_known.copy()
-    next_month['month'] = last_known['month'] + pd.offsets.MonthEnd(i)
-    
-    # Shift the lag features for the next forecast
-    for lag in range(1, 12):  # Shift previous lag values
-        next_month[f'revenue_lag_{lag}'] = last_known[f'revenue_lag_{lag+1}']
-    
-    next_month['revenue_lag_12'] = last_known['consolidated_revenue']  # Last month is now 12-month lag
-    
-    next_month.drop(['consolidated_revenue'], axis=1, inplace=True)
-    
-    # Predict the revenue for the next month
-    next_revenue = model.predict(next_month.drop(['month'], axis=1))
-    print(f'Forecasted revenue for {next_month["month"].iloc[0]}: {next_revenue[0]}')
-    
-    # Update last_known with the predicted revenue
-    last_known['consolidated_revenue'] = next_revenue
+# Predict using the last model trained
+future_X = future_df[features]
+future_pred = models[-1].predict(future_X)
+print(future_pred)
