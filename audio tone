@@ -1,0 +1,131 @@
+import librosa
+import soundfile as sf
+
+# Load the full audio file
+# audio_file = '/content/20230607_me_canadian_wildfires.mp3'
+audio_data, sr = librosa.load(audio_file, sr=None)  # Load the audio with the native sample rate
+
+# Provided timestamps for Speaker B in milliseconds
+timestamps_speaker_B = [(27850, 28786), (39050, 56104), (62340, 82800), (93460, 123380), 
+                        (137440, 156780), (162120, 183652), (184660, 189060), 
+                        (198080, 227616), (241320, 267792), (279440, 280280)]
+
+# Convert milliseconds to seconds and extract audio segments
+for i, (start_ms, end_ms) in enumerate(timestamps_speaker_B):
+    # Convert milliseconds to seconds
+    start_sec = start_ms / 1000.0
+    end_sec = end_ms / 1000.0
+
+    # Convert seconds to samples
+    start_sample = int(start_sec * sr)
+    end_sample = int(end_sec * sr)
+
+    # Extract the segment
+    segment = audio_data[start_sample:end_sample]
+
+    # Save the segment to a new file
+    segment_filename = f'speaker_B_segment_{i+1}.wav'
+    sf.write(segment_filename, segment, sr)
+    print(f"Segment {i+1} saved as {segment_filename}")
+
+
+
+-------------------------
+
+
+import torch
+import librosa
+import matplotlib.pyplot as plt
+from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2Processor
+
+# Load the pretrained model and processor for emotion recognition
+emotion_model = Wav2Vec2ForSequenceClassification.from_pretrained("superb/wav2vec2-large-superb-er")
+emotion_processor = Wav2Vec2FeatureExtractor.from_pretrained("superb/wav2vec2-large-superb-er")
+
+def analyze_audio_tone(audio_path):
+    # Load the audio file
+    audio_input, sample_rate = librosa.load(audio_path, sr=16000)  # Load audio with 16 kHz sample rate
+    
+    # Process the audio input
+    inputs = emotion_processor(audio_input, sampling_rate=sample_rate, return_tensors="pt", padding=True)
+    
+    # Make predictions
+    with torch.no_grad():
+        logits = emotion_model(**inputs).logits
+
+    # Get predicted emotion (extract single ID)
+    predicted_id = torch.argmax(logits, dim=-1).item()  # Extracting the scalar value
+    
+    return predicted_id
+
+# Example usage with your segmented audio files
+segmented_files = ['/content/speaker_B_segment_1.wav', '/content/speaker_B_segment_2.wav', '/content/speaker_B_segment_3.wav', "/content/speaker_B_segment_4.wav",
+                   "/content/speaker_B_segment_5.wav", "/content/speaker_B_segment_6.wav", "/content/speaker_B_segment_7.wav",
+                   "/content/speaker_B_segment_8.wav", "/content/speaker_B_segment_9.wav", "/content/speaker_B_segment_10.wav"]   # Add all segmented file names
+
+# List to store emotion predictions
+emotion_predictions = []
+file_indices = []
+
+# Analyze each file and store the predicted emotion
+for idx, file in enumerate(segmented_files):
+    emotion = analyze_audio_tone(file)
+    emotion_predictions.append(emotion)
+    file_indices.append(idx + 1)  # Storing the index for plotting
+
+    print(f"File {file}: Emotion detected - {emotion}")
+
+# Mapping emotion IDs to labels (modify this based on the model's emotion mapping)
+emotion_labels = {
+    0: "neutral",
+    1: "happy",
+    2: "angry",
+    3: "sad"
+}
+
+# Convert emotion IDs to labels
+emotion_labels_predictions = [emotion_labels[emotion] for emotion in emotion_predictions]
+
+# Plot the emotions across files
+plt.figure(figsize=(10, 6))
+plt.plot(file_indices, emotion_predictions, marker='o', linestyle='-', color='b', label='Emotion')
+plt.xticks(file_indices)  # Set x-ticks to show file indices
+plt.yticks(list(emotion_labels.keys()), list(emotion_labels.values()))  # Set y-ticks to show emotion labels
+plt.title("Emotion Predictions Across Audio Segments")
+plt.xlabel("Segmented Audio File")
+plt.ylabel("Predicted Emotion")
+plt.grid(True)
+plt.show()
+
+
+-----------------------------------
+
+# Timestamps for Speaker B
+timestamps_speaker_B = [(27850, 28786), (39050, 56104), (62340, 82800), (93460, 123380), 
+                        (137440, 156780), (162120, 183652), (184660, 189060), 
+                        (198080, 227616), (241320, 267792), (279440, 280280)]  # In milliseconds
+
+# Mapping emotion IDs to labels (modify this based on the model's emotion mapping)
+emotion_labels = {
+    0: "neutral",
+    1: "happy",
+    2: "angry",
+    3: "sad"
+}
+
+# Convert emotion IDs to labels
+emotion_labels_predictions = [emotion_labels[emotion] for emotion in emotion_predictions]  # Only use the first prediction per file
+
+# Extract midpoint of each timestamp for plotting
+timestamps_midpoints = [(start + end) // 2 for start, end in timestamps_speaker_B]
+
+# Plot the emotions across files using midpoints as the x-axis
+plt.figure(figsize=(10, 6))
+plt.plot(timestamps_midpoints, [emotion for emotion in emotion_predictions], marker='o', linestyle='-', color='b', label='Emotion')
+plt.xticks(timestamps_midpoints, [f"{start//1000}-{end//1000}s" for start, end in timestamps_speaker_B])  # Convert ms to seconds
+plt.yticks(list(emotion_labels.keys()), list(emotion_labels.values()))  # Set y-ticks to show emotion labels
+plt.title("Emotion Predictions Across Speaker B's Timestamps")
+plt.xlabel("Timestamps (in seconds)")
+plt.ylabel("Predicted Emotion")
+plt.grid(True)
+plt.show()
