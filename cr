@@ -189,4 +189,95 @@ plt.xlabel('Index')
 plt.ylabel('Consolidated Revenue')
 plt.legend(['Actual', 'Predicted'])
 plt.show()
-                                                                                                           
+
+-------------                                                                                                                                                                                                                    
+                                                                                                                                                                                                                    
+import pandas as pd
+import lightgbm as lgb
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.preprocessing import LabelEncoder
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Load your dataset (replace with actual file path or dataframe)
+df = pd.read_csv('consolidated_revenue_data.csv')
+
+# Ensure 'Month' column is datetime
+df['Month'] = pd.to_datetime(df['Month'])
+
+# Sort by time to ensure temporal order
+df = df.sort_values('Month')
+
+# Step 1: Label Encoding for Customer Group
+label_encoder = LabelEncoder()
+df['customer_group_encoded'] = label_encoder.fit_transform(df['customer_group'])
+
+# Step 2: One-Hot Encoding for Ledger and Vertical
+one_hot_features = pd.get_dummies(df[['ledger', 'vertical']], drop_first=True)
+df = pd.concat([df, one_hot_features], axis=1)
+df.drop(['customer_group', 'ledger', 'vertical'], axis=1, inplace=True)
+
+# Step 3: Feature engineering - extract time-based features
+df['month'] = df['Month'].dt.month
+df['quarter'] = df['Month'].dt.quarter
+df['year'] = df['Month'].dt.year
+
+# Step 4: Prepare data for LightGBM model
+features = ['customer_group_encoded', 'month', 'quarter', 'year'] + list(one_hot_features.columns)
+X = df[features]
+y = df['consolidated_revenue']
+
+# Step 5: Train LightGBM model on the historical data
+params = {
+    'objective': 'regression',
+    'metric': 'rmse',
+    'learning_rate': 0.1,
+    'num_leaves': 31,
+    'min_data_in_leaf': 20
+}
+
+# Fit model to historical data
+train_data = lgb.Dataset(X, label=y)
+model = lgb.train(params, train_data)
+
+# Step 6: Prepare data for the next three months
+# Create future dates for the next three months
+last_date = df['Month'].max()
+future_dates = [last_date + pd.DateOffset(months=i) for i in range(1, 4)]
+
+# Create DataFrame for future predictions
+future_df = pd.DataFrame({
+    'Month': future_dates,
+    'customer_group_encoded': 0,  # Placeholder for customer group encoding
+    'month': [date.month for date in future_dates],
+    'quarter': [date.quarter for date in future_dates],
+    'year': [date.year for date in future_dates]
+})
+
+# Handle one-hot encoded features for future data
+# Assuming the unique categories in 'ledger' and 'vertical' are known
+future_ledgers = pd.get_dummies(pd.Series(['Ledger1', 'Ledger2', 'Ledger3']), drop_first=True)  # Replace with your actual ledger categories
+future_verticals = pd.get_dummies(pd.Series(['Vertical1', 'Vertical2']), drop_first=True)  # Replace with your actual vertical categories
+
+# Combine the one-hot encoded features for future data
+future_df = pd.concat([future_df, future_ledgers.reindex(future_df.index, fill_value=0)], axis=1)
+future_df = pd.concat([future_df, future_verticals.reindex(future_df.index, fill_value=0)], axis=1)
+
+# Step 7: Predict for the next three months
+X_future = future_df.drop('Month', axis=1)  # Drop the Month column for predictions
+future_predictions = model.predict(X_future)
+
+# Print the predictions for the next three months
+for i, date in enumerate(future_dates):
+    print(f'Predicted Revenue for {date.strftime("%Y-%m")}: {future_predictions[i]}')
+
+# Step 8: Plot Predicted Revenue
+plt.figure(figsize=(10, 6))
+plt.plot(df['Month'], y, label='Historical Revenue', color='blue', marker='o', linestyle='-')
+plt.plot(future_dates, future_predictions, label='Predicted Revenue', color='orange', marker='x', linestyle='--')
+plt.title('Predicted Revenue for Next 3 Months')
+plt.xlabel('Month')
+plt.ylabel('Consolidated Revenue')
+plt.legend()
+plt.grid()
+plt.show()
