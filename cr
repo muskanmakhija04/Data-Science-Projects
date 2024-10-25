@@ -91,14 +91,14 @@ Quill:
 ### 3. **Techniques and Algorithms**
    - "I began by collecting data, including product descriptions and ASIN numbers, 
     and labeled it to indicate the presence of physical memory. 
-    After preprocessing the data and creating new features, I explored various logistic regression models. 
+    After preprocessing the data and creating new features, I explored various classification models. 
     Ultimately, we selected the XGBoost model, achieving an initial accuracy of 80%. 
     After hyperparameter tuning, we improved this to 95%."
 
 ### 4. **Results**
    - "The automated solution effectively identified products with physical memory, 
     ensuring secure data wiping before resale. 
-    This not only streamlined our operations but also strengthened customer trust in our processes."
+    This not only streamlined our operations but also strengthened customer trust."
 
 
 
